@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Intervention\Image\Facades\Image;
 
 class ProfilesController extends Controller
@@ -11,9 +12,31 @@ class ProfilesController extends Controller
     public function index($user)
     {
         $user=User::findOrFail($user);
+        $follows=(auth()->user()) ? auth()->user()->following->contains($user->id) : false;
+
+        $postCount=\Illuminate\Support\Facades\Cache::remember(
+            'count.posts.' . $user->id,
+            now()->addSeconds(30),
+            function() use($user) { return $user->posts->count(); });
+
+        $followerCount=\Illuminate\Support\Facades\Cache::remember(
+            'count.followers.' . $user->id,
+            now()->addSeconds(30),
+            function() use($user) { return $user->profile->followers->count(); });
+
+        $followingCount=\Illuminate\Support\Facades\Cache::remember(
+            'count.following.' . $user->id,
+            now()->addSeconds(30),
+            function() use($user) { return$user->following->count(); });
+
+        //dd($follows);
 
         return view('profiles.index', [
             'user'=>$user,
+            'follows'=>$follows,
+            'postCount'=>$postCount,
+            'followerCount'=>$followerCount,
+            'followingCount'=>$followingCount,
         ]);
 
     }
@@ -35,7 +58,7 @@ class ProfilesController extends Controller
             'image'=>'',
         ]);
 
-        
+
         if(request('image'))
         {
             $imagePath=request('image')->store('profile','public');
@@ -43,11 +66,13 @@ class ProfilesController extends Controller
             $image= Image::make(public_path("storage/{$imagePath}"))->fit(1000, 1000);
             $image->save();
 
+            $imageArray=['image'=>$imagePath];
+
         }
 
         auth()->user()->profile->update(array_merge(
             $data,
-            ['image'=>$imagePath]
+            $imageArray ?? []
         ));
 
         return redirect("/profile/{$user->id}");
